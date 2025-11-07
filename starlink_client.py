@@ -69,10 +69,54 @@ class StarlinkClient:
             # Extract relevant data
             dish_status = response.dish_get_status
 
+            # Helper function to safely get field value with warning logging
+            def get_field(obj, field_name, default=None):
+                try:
+                    return getattr(obj, field_name)
+                except AttributeError:
+                    logger.warning(f"Field '{field_name}' not found in response, using default: {default}")
+                    return default
+
+            # Helper for nested fields
+            def get_nested_field(parent_obj, parent_name, field_name, default=None):
+                if not hasattr(parent_obj, parent_name):
+                    logger.warning(f"Parent field '{parent_name}' not found in response")
+                    return default
+                parent = getattr(parent_obj, parent_name)
+                return get_field(parent, field_name, default)
+
             result = {
+                # Existing metrics
                 "pop_ping_drop_rate": dish_status.pop_ping_drop_rate,
                 "pop_ping_latency_ms": dish_status.pop_ping_latency_ms,
                 "uptime_s": dish_status.device_state.uptime_s,
+
+                # Bandwidth metrics
+                "downlink_throughput_bps": get_field(dish_status, "downlink_throughput_bps", 0.0),
+                "uplink_throughput_bps": get_field(dish_status, "uplink_throughput_bps", 0.0),
+
+                # GPS metrics
+                "gps_sats": get_nested_field(dish_status, "gps_stats", "gps_sats", 0),
+                "gps_valid": get_nested_field(dish_status, "gps_stats", "gps_valid", False),
+
+                # Obstruction metrics
+                "obstruction_fraction": get_nested_field(dish_status, "obstruction_stats", "fraction_obstructed", 0.0),
+                "obstruction_time": get_nested_field(dish_status, "obstruction_stats", "time_obstructed", 0.0),
+
+                # Signal quality
+                "snr_above_noise_floor": get_field(dish_status, "is_snr_above_noise_floor", False),
+
+                # Positioning
+                "boresight_azimuth_deg": get_field(dish_status, "boresight_azimuth_deg", 0.0),
+                "boresight_elevation_deg": get_field(dish_status, "boresight_elevation_deg", 0.0),
+
+                # Network
+                "eth_speed_mbps": get_field(dish_status, "eth_speed_mbps", 0),
+
+                # Device info
+                "hardware_version": get_nested_field(dish_status, "device_info", "hardware_version", "unknown"),
+                "software_version": get_nested_field(dish_status, "device_info", "software_version", "unknown"),
+                "country_code": get_nested_field(dish_status, "device_info", "country_code", "unknown"),
             }
 
             return result

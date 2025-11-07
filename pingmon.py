@@ -56,13 +56,31 @@ class MetricsCollector:
         self.errors_total = 0
         self.scrapes_total = 0
 
-    def update(self, drop_rate: float, history_drops: list):
+        # New metrics
+        self.pop_ping_latency_ms = 0.0
+        self.downlink_throughput_bps = 0.0
+        self.uplink_throughput_bps = 0.0
+        self.gps_sats = 0
+        self.gps_valid = False
+        self.obstruction_fraction = 0.0
+        self.obstruction_time = 0.0
+        self.snr_above_noise_floor = False
+        self.boresight_azimuth_deg = 0.0
+        self.boresight_elevation_deg = 0.0
+        self.uptime_seconds = 0
+        self.eth_speed_mbps = 0
+        self.hardware_version = "unknown"
+        self.software_version = "unknown"
+        self.country_code = "unknown"
+
+    def update(self, drop_rate: float, history_drops: list, status: dict = None):
         """
         Update metrics with new data.
 
         Args:
             drop_rate: Current drop rate (0.0-1.0)
             history_drops: List of historical drop rates
+            status: Dictionary with additional status metrics
         """
         with self.lock:
             self.current_drop_rate = drop_rate
@@ -85,6 +103,24 @@ class MetricsCollector:
                 if is_dropping and not self.last_was_dropping:
                     self.drop_events += 1
                 self.last_was_dropping = is_dropping
+
+            # Update additional metrics from status
+            if status:
+                self.pop_ping_latency_ms = status.get("pop_ping_latency_ms", 0.0)
+                self.downlink_throughput_bps = status.get("downlink_throughput_bps", 0.0)
+                self.uplink_throughput_bps = status.get("uplink_throughput_bps", 0.0)
+                self.gps_sats = status.get("gps_sats", 0)
+                self.gps_valid = status.get("gps_valid", False)
+                self.obstruction_fraction = status.get("obstruction_fraction", 0.0)
+                self.obstruction_time = status.get("obstruction_time", 0.0)
+                self.snr_above_noise_floor = status.get("snr_above_noise_floor", False)
+                self.boresight_azimuth_deg = status.get("boresight_azimuth_deg", 0.0)
+                self.boresight_elevation_deg = status.get("boresight_elevation_deg", 0.0)
+                self.uptime_seconds = status.get("uptime_s", 0)
+                self.eth_speed_mbps = status.get("eth_speed_mbps", 0)
+                self.hardware_version = status.get("hardware_version", "unknown")
+                self.software_version = status.get("software_version", "unknown")
+                self.country_code = status.get("country_code", "unknown")
 
             # Check for alerts
             if drop_rate > ALERT_THRESHOLD:
@@ -112,6 +148,9 @@ class MetricsCollector:
         """
         with self.lock:
             uptime = time.time() - self.start_time
+            gps_valid_int = 1 if self.gps_valid else 0
+            snr_int = 1 if self.snr_above_noise_floor else 0
+
             metrics = f"""# HELP starlink_ping_drop_rate_current Current ping drop rate (0.0-1.0)
 # TYPE starlink_ping_drop_rate_current gauge
 starlink_ping_drop_rate_current {self.current_drop_rate}
@@ -131,6 +170,58 @@ starlink_ping_drop_events_total {self.drop_events}
 # HELP starlink_ping_samples_total Total number of samples processed
 # TYPE starlink_ping_samples_total counter
 starlink_ping_samples_total {self.total_samples}
+
+# HELP starlink_pop_ping_latency_ms Round-trip latency to Starlink Point of Presence in milliseconds
+# TYPE starlink_pop_ping_latency_ms gauge
+starlink_pop_ping_latency_ms {self.pop_ping_latency_ms}
+
+# HELP starlink_downlink_throughput_bps Current downlink (download) throughput in bits per second
+# TYPE starlink_downlink_throughput_bps gauge
+starlink_downlink_throughput_bps {self.downlink_throughput_bps}
+
+# HELP starlink_uplink_throughput_bps Current uplink (upload) throughput in bits per second
+# TYPE starlink_uplink_throughput_bps gauge
+starlink_uplink_throughput_bps {self.uplink_throughput_bps}
+
+# HELP starlink_gps_satellites Number of GPS satellites currently tracked
+# TYPE starlink_gps_satellites gauge
+starlink_gps_satellites {self.gps_sats}
+
+# HELP starlink_gps_valid GPS lock status (1=valid, 0=invalid)
+# TYPE starlink_gps_valid gauge
+starlink_gps_valid {gps_valid_int}
+
+# HELP starlink_obstruction_fraction Fraction of time the dish view is obstructed (0.0-1.0)
+# TYPE starlink_obstruction_fraction gauge
+starlink_obstruction_fraction {self.obstruction_fraction}
+
+# HELP starlink_obstruction_time_seconds Total time obstructed in seconds
+# TYPE starlink_obstruction_time_seconds gauge
+starlink_obstruction_time_seconds {self.obstruction_time}
+
+# HELP starlink_snr_above_noise_floor Signal-to-noise ratio quality indicator (1=good, 0=poor)
+# TYPE starlink_snr_above_noise_floor gauge
+starlink_snr_above_noise_floor {snr_int}
+
+# HELP starlink_boresight_azimuth_degrees Dish boresight azimuth angle in degrees
+# TYPE starlink_boresight_azimuth_degrees gauge
+starlink_boresight_azimuth_degrees {self.boresight_azimuth_deg}
+
+# HELP starlink_boresight_elevation_degrees Dish boresight elevation angle in degrees
+# TYPE starlink_boresight_elevation_degrees gauge
+starlink_boresight_elevation_degrees {self.boresight_elevation_deg}
+
+# HELP starlink_uptime_seconds Device uptime in seconds
+# TYPE starlink_uptime_seconds gauge
+starlink_uptime_seconds {self.uptime_seconds}
+
+# HELP starlink_eth_speed_mbps Ethernet link speed in Mbps
+# TYPE starlink_eth_speed_mbps gauge
+starlink_eth_speed_mbps {self.eth_speed_mbps}
+
+# HELP starlink_info Static device information
+# TYPE starlink_info gauge
+starlink_info{{hardware_version="{self.hardware_version}",software_version="{self.software_version}",country_code="{self.country_code}"}} 1
 
 # HELP starlink_monitor_last_update_timestamp Unix timestamp of last successful update
 # TYPE starlink_monitor_last_update_timestamp gauge
@@ -226,10 +317,14 @@ def monitoring_loop(collector: MetricsCollector, shutdown_event: threading.Event
             collector.last_counter = general["end_counter"]
 
             # Update metrics
-            collector.update(current_drop_rate, bulk["pop_ping_drop_rate"])
+            collector.update(current_drop_rate, bulk["pop_ping_drop_rate"], status)
 
             logger.debug(
                 f"Updated metrics: current_drop={current_drop_rate*100:.2f}%, "
+                f"latency={status.get('pop_ping_latency_ms', 0):.2f}ms, "
+                f"down={status.get('downlink_throughput_bps', 0)/1e6:.2f}Mbps, "
+                f"up={status.get('uplink_throughput_bps', 0)/1e6:.2f}Mbps, "
+                f"gps_sats={status.get('gps_sats', 0)}, "
                 f"new_samples={general['samples']}"
             )
 

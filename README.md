@@ -10,7 +10,7 @@ Assuming you have StarLink and are on the same network with it
 
 Build the image:
 ```bash
-cd starlink-mon-grpc
+cd starlink-monitor
 docker build -t starlink-pingmon .
 ```
 
