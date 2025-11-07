@@ -1,0 +1,3 @@
+grpcio>=1.12.0
+protobuf>=3.6.0
+yagrc>=1.1.1
