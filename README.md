@@ -2,33 +2,45 @@
 
 A lightweight microservice that continuously monitors metrics from your Starlink dish and exposes them via a Prometheus-compatible HTTP endpoint.
 
+![Grafana Dashboard](grafana/screenshot.png)
+
 ## Quick Start
 
-Assuming you have StarLink and are on the same network with it
+Assuming you are on the same network as StarLink dish.
 
 ### Using Docker (Recommended)
-
-Build the image:
-```bash
-cd starlink-monitor
-docker build -t starlink-pingmon .
-```
 
 Run the container:
 ```bash
 docker run -d \
-  --name starlink-pingmon \
+  --name starlink-monitor \
   --network host \
   -e DISH_IP=192.168.100.1 \
   -e POLL_INTERVAL=2 \
   -e ALERT_THRESHOLD=0.1 \
   --restart unless-stopped \
-  starlink-pingmon
+  ghcr.io/radeksh/starlink-monitor:latest
+```
+
+Build from code and run:
+```bash
+cd starlink-monitor
+
+docker build -t starlink-monitor .
+
+docker run -d \
+  --name starlink-monitor \
+  --network host \
+  -e DISH_IP=192.168.100.1 \
+  -e POLL_INTERVAL=2 \
+  -e ALERT_THRESHOLD=0.1 \
+  --restart unless-stopped \
+  starlink-monitor
 ```
 
 Check the logs:
 ```bash
-docker logs -f starlink-pingmon
+docker logs -f starlink-monitor
 ```
 
 ### Using Python Directly
@@ -40,7 +52,7 @@ pip install -r requirements.txt
 
 Run the service:
 ```bash
-python pingmon.py
+python monitor.py
 ```
 
 ## Configuration
@@ -153,7 +165,9 @@ rate(starlink_ping_drop_events_total[1h]) * 3600
 
 ## Grafana Dashboard
 
-Create visualizations using these queries:
+Example K8s Configmap with ready dashboard in (grafana/dashboard.yaml)[grafana/dashboard.yaml].
+
+You can also create visualizations using these queries:
 
 1. **Ping Drop Rate (Time Series)**
    - Query: `starlink_ping_drop_rate_current * 100`
